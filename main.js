@@ -1,58 +1,103 @@
-import 'dotenv/config';          // Automatically loads .env into process.env
+import 'dotenv/config'; // Loads .env into process.env
 import lighthouse from 'lighthouse';
-import chromeLauncher from 'chrome-launcher';
+import * as ChromeLauncher from 'chrome-launcher';
 import { google } from 'googleapis';
-import fs from 'fs';
-import path from 'path';
 
-// 1. Hardcode your URLs or fetch them from somewhere else
+/**
+ * 1. URLs to test
+ */
 const URLS_TO_TEST = [
   'https://mex.com.au/',
-  'https://mex.com.au/maintenancesoftware/'
+  'https://mex.com.au/maintenancesoftware/',
 ];
 
-// 2. Path to your service account JSON file
-// Make sure to keep this file private, and .gitignore it if using version control
-const SERVICE_ACCOUNT_KEY_FILE = path.join(__dirname, 'autolighthousejs.json');
+/**
+ * 2. Path to service account JSON
+ */
+const SERVICE_ACCOUNT_KEY_FILE = "./autolighthousejs.json";
 
-// 3. Your Google Spreadsheet ID
-// You can find this in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS_PART_IS_THE_ID>/edit
-console.log(process.env.GOOGLE_SHEETS_ID);
+/**
+ * 3. Google Sheets config
+ */
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID;
+const SHEET_NAME = 'Results'; // e.g., "Results" tab
 
+/**
+ * 4. Lighthouse configs for MOBILE vs DESKTOP
+ */
+const mobileConfig = {
+  logLevel: 'error',
+  output: 'json',
+  // By default, Lighthouse uses a mobile emulation. 
+  // But we can explicitly specify if we want:
+  extends: 'lighthouse:default',
+  // settings: {
+  //   formFactor: 'mobile',
+  //   screenEmulation: {
+  //     mobile: true,
+  //     width: 375,
+  //     height: 667,
+  //     deviceScaleRatio: 2,
+  //     disabled: false
+  //   }
+  // }
+};
 
-// OPTIONAL: The sheet/tab name & range for appending. Adjust as needed.
-const SHEET_NAME = 'Results'; // or e.g. 'LighthouseData'
+const desktopConfig = {
+  logLevel: 'error',
+  output: 'json',
+  extends: 'lighthouse:default',
+  settings: {
+    formFactor: 'desktop',
+    screenEmulation: {
+      mobile: false,
+      width: 1350,
+      height: 940,
+      deviceScaleRatio: 1,
+      disabled: false
+    }
+  }
+};
 
-// Helper function to run Lighthouse
-async function runLighthouse(url) {
+/**
+ * We create an array of run modes so we can iterate 
+ * over "mobile" and "desktop" for each URL
+ */
+const RUN_MODES = [
+  { deviceType: 'Mobile', config: mobileConfig },
+  { deviceType: 'Desktop', config: desktopConfig }
+];
+
+/**
+ * Launch Chrome & run Lighthouse for a given URL + config
+ */
+async function runLighthouse(url, lhConfig) {
   // Launch headless Chrome
-  const chrome = await chromeLauncher.launch({ chromeFlags: ['--headless'] });
-  
-  const options = {
-    logLevel: 'error',
-    output: 'json',
-    port: chrome.port,
-    // You can set specific throttling or configs here if needed
-  };
+  const chrome = await ChromeLauncher.launch({
+    chromeFlags: ['--headless'],
+    userDataDir: 'C:\\TempChromeFiles' // or another writable path
+  });
 
+  // Merge the config with the dynamic port from Chrome
+  const options = { ...lhConfig, port: chrome.port };
+
+  // Run Lighthouse
   const runnerResult = await lighthouse(url, options);
-  // runnerResult.lhr is the Lighthouse Result
   await chrome.kill();
 
-  return runnerResult.lhr;
+  return runnerResult.lhr; // The Lighthouse result object
 }
 
-// Helper function to append data to Google Sheets
+/**
+ * Append data to Google Sheets
+ */
 async function appendToGoogleSheets(authClient, rows) {
   const sheets = google.sheets({ version: 'v4', auth: authClient });
 
-  // The 'range' here is something like 'Sheet1!A1'. Using 'append', we don’t
-  // have to specify the exact row, just the top-left corner (A1).
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SHEET_NAME}!A1`,
-    valueInputOption: 'USER_ENTERED', // or 'RAW'
+    valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: rows,
     },
@@ -60,59 +105,112 @@ async function appendToGoogleSheets(authClient, rows) {
 }
 
 async function main() {
-  // 1. Auth with Google using a service account
-  console.log("Accessing Service Account.")
+  // Auth with Google
+  console.log("Accessing Service Account...");
   const auth = new google.auth.GoogleAuth({
     keyFile: SERVICE_ACCOUNT_KEY_FILE,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
   const authClient = await auth.getClient();
 
-  // 2. Loop through each URL, run Lighthouse, and build up our data rows
-  const now = new Date().toISOString(); // you can format the date/time as you prefer
-  
+  // We'll store all results in one big array, then append at the end
   const rows = [];
+
+  // A short date string, e.g. "20/02/2025" in en-AU format
+  const dateStr = new Date().toLocaleDateString("en-AU");
+
   for (const url of URLS_TO_TEST) {
-    const fullUrl = url.startsWith('http') ? url : `https://example.com${url}`;
-    console.log(`Running Lighthouse for: ${fullUrl}`);
+    for (const mode of RUN_MODES) {
+      const { deviceType, config } = mode;
 
-    try {
-      const lhr = await runLighthouse(fullUrl);
-      // Extract the scores we care about
-      const performance = lhr.categories.performance.score;
-      const accessibility = lhr.categories.accessibility.score;
-      const bestPractices = lhr.categories['best-practices'].score;
-      const seo = lhr.categories.seo.score;
-      
-      // You could also pull in metrics like TTFB, FCP, LCP, etc. from lhr.audits
+      console.log(`Running Lighthouse for: ${url} [${deviceType}]`);
 
-      // Create a row: [ Date, Relative/Full URL, Perf, Accessibility, Best Practices, SEO ]
-      const row = [
-        now,
-        url, // or fullUrl
-        performance,
-        accessibility,
-        bestPractices,
-        seo
-      ];
-      rows.push(row);
-    } catch (error) {
-      console.error(`Error running Lighthouse for ${url}:`, error);
-      // Optionally, push a row indicating an error
-      const row = [now, url, 'ERROR', error.toString()];
-      rows.push(row);
+      try {
+        const lhr = await runLighthouse(url, config);
+
+        // Domain
+        const domain = new URL(url).hostname;
+
+        // Keep siteVersion empty for manual entry
+        const siteVersion = "";
+
+        // Grab metrics (in ms -> convert to seconds)
+        const fcpMs = lhr.audits['first-contentful-paint']?.numericValue;
+        const lcpMs = lhr.audits['largest-contentful-paint']?.numericValue;
+        const tbtMs = lhr.audits['total-blocking-time']?.numericValue;
+        const cls   = lhr.audits['cumulative-layout-shift']?.numericValue;
+        const speedIndexMs = lhr.audits['speed-index']?.numericValue;
+
+        // Convert to seconds with 2 decimals
+        const fcpSec =  fcpMs ?  (fcpMs / 1000).toFixed(2) : "";
+        const lcpSec =  lcpMs ?  (lcpMs / 1000).toFixed(2) : "";
+        const tbtSec =  tbtMs ?  (tbtMs / 1000).toFixed(2) : "";
+        const speedIndexSec = speedIndexMs ? (speedIndexMs / 1000).toFixed(2) : "";
+
+        // Category scores
+        const performance   = lhr.categories.performance?.score;
+        const accessibility = lhr.categories.accessibility?.score;
+        const bestPractices = lhr.categories['best-practices']?.score;
+        const seo           = lhr.categories.seo?.score;
+
+        // The row in the desired order:
+        // 1) Date
+        // 2) Domain
+        // 3) URL
+        // 4) Mobile or Desktop
+        // 5) Site Version
+        // 6) FCP (s)
+        // 7) LCP (s)
+        // 8) TBT (s)
+        // 9) CLS
+        // 10) Speed Index (s)
+        // 11) Performance Score
+        // 12) Accessibility Score
+        // 13) Best Practices Score
+        // 14) SEO Score
+        const row = [
+          dateStr,
+          domain,
+          url,
+          deviceType,
+          siteVersion,
+          fcpSec,
+          lcpSec,
+          tbtSec,
+          cls,
+          speedIndexSec,
+          performance,
+          accessibility,
+          bestPractices,
+          seo
+        ];
+
+        rows.push(row);
+      } catch (err) {
+        console.error(`Error running Lighthouse for ${url} [${deviceType}]:`, err);
+        // If there's an error, push partial data or an error row
+        rows.push([
+          dateStr,
+          "", // domain
+          url,
+          deviceType,
+          "",
+          "", "", "", "", "", "", "", "", "",
+          `ERROR: ${err.message}`
+        ]);
+      }
     }
   }
 
-  // 3. Append all rows to the Google Sheet
+  // Finally append rows if we have any
   if (rows.length > 0) {
     console.log(`Appending ${rows.length} row(s) to Google Sheets...`);
     await appendToGoogleSheets(authClient, rows);
-    console.log('Done!');
+    console.log("Done!");
   } else {
-    console.log('No rows to append.');
+    console.log("No rows to append.");
   }
 }
 
-// Run the script
+// Run it
 main().catch(console.error);
