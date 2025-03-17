@@ -7,8 +7,27 @@ import { google } from 'googleapis';
  * 1. URLs to test
  */
 const URLS_TO_TEST = [
-  'https://mex.com.au/',
-  'https://mex.com.au/maintenancesoftware/',
+  'https://www.tmasystems.com/'
+// 'https://www.tmasystems.com/products',
+// 'https://www.tmasystems.com/about',
+// 'https://www.tmasystems.com/resources/uc-tma-user-conference',
+// 'https://www.tmasystems.com/contact',
+// 'https://www.tmasystems.com/products/mobiletma-go',
+// 'https://www.tmasystems.com/interfaces-and-integrations',
+// 'https://www.tmasystems.com/resources/the-importance-of-preventive-maintenance',
+// 'https://www.tmasystems.com/services/support',
+// 'https://www.tmasystems.com/resources/using-data-analytics-to-optimize-predictive-maintenance-schedules',
+// 'https://www.tmasystems.com/services/training',
+// 'https://www.tmasystems.com/products/reporting-monitoring-tools-kpis',
+// 'https://www.tmasystems.com/resources/a-guide-to-efficiently-manage-work-orders',
+// 'https://www.tmasystems.com/products/standard-service-request',
+// 'https://www.tmasystems.com/industries/healthcare',
+// 'https://www.tmasystems.com/products/fleet-management',
+// 'https://www.tmasystems.com/services/consulting',
+// 'https://www.tmasystems.com/services/administrative-services',
+// 'https://www.tmasystems.com/resources/2025-the-future-of-maintenance',
+// 'https://www.tmasystems.com/asset-management-software'
+
 ];
 
 /**
@@ -74,12 +93,18 @@ const RUN_MODES = [
 async function runLighthouse(url, lhConfig) {
   // Launch headless Chrome
   const chrome = await ChromeLauncher.launch({
-    chromeFlags: ['--headless'],
+    chromeFlags: [
+      '--headless=new',  // Use new headless mode (fixes some connection issues)
+      '--disable-gpu',   // Disable GPU acceleration (fix for some environments)
+      '--no-sandbox',    // Needed in some environments (Docker, CI/CD)
+      '--remote-debugging-port=9222' // Force a fixed port
+    ],
+    port: 9222, // Set port explicitly
     userDataDir: 'C:\\TempChromeFiles' // or another writable path
   });
 
   // Merge the config with the dynamic port from Chrome
-  const options = { ...lhConfig, port: chrome.port };
+  const options = { ...lhConfig, port: 9222 };
 
   // Run Lighthouse
   const runnerResult = await lighthouse(url, options);
