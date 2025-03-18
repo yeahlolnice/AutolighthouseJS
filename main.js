@@ -2,64 +2,41 @@ import 'dotenv/config'; // Loads .env into process.env
 import lighthouse from 'lighthouse';
 import * as ChromeLauncher from 'chrome-launcher';
 import { google } from 'googleapis';
+import * as fs from 'fs';
 
-/**
- * 1. URLs to test
- */
-const URLS_TO_TEST = [
-  'https://www.tmasystems.com/'
-// 'https://www.tmasystems.com/products',
-// 'https://www.tmasystems.com/about',
-// 'https://www.tmasystems.com/resources/uc-tma-user-conference',
-// 'https://www.tmasystems.com/contact',
-// 'https://www.tmasystems.com/products/mobiletma-go',
-// 'https://www.tmasystems.com/interfaces-and-integrations',
-// 'https://www.tmasystems.com/resources/the-importance-of-preventive-maintenance',
-// 'https://www.tmasystems.com/services/support',
-// 'https://www.tmasystems.com/resources/using-data-analytics-to-optimize-predictive-maintenance-schedules',
-// 'https://www.tmasystems.com/services/training',
-// 'https://www.tmasystems.com/products/reporting-monitoring-tools-kpis',
-// 'https://www.tmasystems.com/resources/a-guide-to-efficiently-manage-work-orders',
-// 'https://www.tmasystems.com/products/standard-service-request',
-// 'https://www.tmasystems.com/industries/healthcare',
-// 'https://www.tmasystems.com/products/fleet-management',
-// 'https://www.tmasystems.com/services/consulting',
-// 'https://www.tmasystems.com/services/administrative-services',
-// 'https://www.tmasystems.com/resources/2025-the-future-of-maintenance',
-// 'https://www.tmasystems.com/asset-management-software'
+// 1. Read URLs From Text File
+const URLS_TO_TEST = fs.readFileSync('URLs.txt').toString('UTF8').split('\n');
 
-];
 
-/**
- * 2. Path to service account JSON
- */
+// 2. Path to service account JSON
 const SERVICE_ACCOUNT_KEY_FILE = "./autolighthousejs.json";
 
-/**
- * 3. Google Sheets config
- */
+
+// 3. Google Sheets config
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID;
 const SHEET_NAME = 'Results'; // e.g., "Results" tab
 
-/**
- * 4. Lighthouse configs for MOBILE vs DESKTOP
- */
+
+// 4. Lighthouse configs for MOBILE vs DESKTOP
 const mobileConfig = {
   logLevel: 'error',
   output: 'json',
-  // By default, Lighthouse uses a mobile emulation. 
-  // But we can explicitly specify if we want:
   extends: 'lighthouse:default',
-  // settings: {
-  //   formFactor: 'mobile',
-  //   screenEmulation: {
-  //     mobile: true,
-  //     width: 375,
-  //     height: 667,
-  //     deviceScaleRatio: 2,
-  //     disabled: false
-  //   }
-  // }
+  settings: {
+    formFactor: 'mobile',
+    screenEmulation: {
+      mobile: true,
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 2,
+      disabled: false
+    },
+    throttling: {
+      rttMs: 0, // No artificial latency
+      throughputKbps: 0, // No artificial bandwidth limits
+      cpuSlowdownMultiplier: 1 // No CPU throttling
+    }
+  }
 };
 
 const desktopConfig = {
@@ -67,14 +44,60 @@ const desktopConfig = {
   output: 'json',
   extends: 'lighthouse:default',
   settings: {
-    formFactor: 'desktop',
-    screenEmulation: {
-      mobile: false,
-      width: 1350,
-      height: 940,
-      deviceScaleRatio: 1,
-      disabled: false
-    }
+    "output": "json",
+    "maxWaitForFcp": 30000,
+    "maxWaitForLoad": 45000,
+    "pauseAfterFcpMs": 1000,
+    "pauseAfterLoadMs": 1000,
+    "networkQuietThresholdMs": 1000,
+    "cpuQuietThresholdMs": 1000,
+    "formFactor": "desktop",
+    "throttling": {
+      "rttMs": 40,
+      "throughputKbps": 10240,
+      "requestLatencyMs": 0,
+      "downloadThroughputKbps": 0,
+      "uploadThroughputKbps": 0,
+      "cpuSlowdownMultiplier": 1
+    },
+    "throttlingMethod": "simulate",
+    "screenEmulation": {
+      "mobile": true,
+      "width": 412,
+      "height": 823,
+      "deviceScaleFactor": 1.75,
+      "disabled": true
+    },
+    "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "auditMode": false,
+    "gatherMode": false,
+    "clearStorageTypes": [
+      "file_systems",
+      "shader_cache",
+      "service_workers",
+      "cache_storage"
+    ],
+    "disableStorageReset": false,
+    "debugNavigation": false,
+    "channel": "devtools",
+    "usePassiveGathering": false,
+    "disableFullPageScreenshot": false,
+    "skipAboutBlank": false,
+    "blankPage": "about:blank",
+    "ignoreStatusCode": true,
+    "locale": "en-US",
+    "blockedUrlPatterns": null,
+    "additionalTraceCategories": "",
+    "extraHeaders": null,
+    "precomputedLanternData": null,
+    "onlyAudits": null,
+    "onlyCategories": [
+      "performance",
+      "accessibility",
+      "best-practices",
+      "seo"
+    ],
+    "skipAudits": null
   }
 };
 
@@ -94,23 +117,29 @@ async function runLighthouse(url, lhConfig) {
   // Launch headless Chrome
   const chrome = await ChromeLauncher.launch({
     chromeFlags: [
-      '--headless=new',  // Use new headless mode (fixes some connection issues)
-      '--disable-gpu',   // Disable GPU acceleration (fix for some environments)
-      '--no-sandbox',    // Needed in some environments (Docker, CI/CD)
-      '--remote-debugging-port=9222' // Force a fixed port
+      '--disable-gpu',
+      '--no-sandbox',
+      '--remote-debugging-port=9222', // Fixed port
+      '--disable-dev-shm-usage', // Helps prevent crashes in some environments
+      '--enable-logging', // Enable logging for debugging
+      '--v=1' // Verbose logging
     ],
-    port: 9222, // Set port explicitly
-    userDataDir: 'C:\\TempChromeFiles' // or another writable path
+    port: 9222, 
   });
 
-  // Merge the config with the dynamic port from Chrome
-  const options = { ...lhConfig, port: 9222 };
+  // Wait for Chrome to fully launch
+  await new Promise(resolve => setTimeout(resolve, 3000));
 
-  // Run Lighthouse
-  const runnerResult = await lighthouse(url, options);
-  await chrome.kill();
+  const options = { ...lhConfig, port: chrome.port };
 
-  return runnerResult.lhr; // The Lighthouse result object
+  try {
+    const runnerResult = await lighthouse(url, options);
+    return runnerResult.lhr;
+  } catch (err) {
+    console.error(`Lighthouse failed on ${url}:`, err);
+  } finally {
+    await chrome.kill();
+  }
 }
 
 /**
@@ -130,6 +159,11 @@ async function appendToGoogleSheets(authClient, rows) {
 }
 
 async function main() {
+
+  // Start Chrome debugging mode
+  // console.log("Starting Chrome in remote debugging mode...");
+  // await startChrome();
+
   // Auth with Google
   console.log("Accessing Service Account...");
   const auth = new google.auth.GoogleAuth({
@@ -163,7 +197,7 @@ async function main() {
         const fcpMs = lhr.audits['first-contentful-paint']?.numericValue;
         const lcpMs = lhr.audits['largest-contentful-paint']?.numericValue;
         const tbtMs = lhr.audits['total-blocking-time']?.numericValue;
-        const cls   = lhr.audits['cumulative-layout-shift']?.numericValue;
+        const cls   = lhr.audits['cumulative-layout-shift']?.numericValue.toFixed(2);
         const speedIndexMs = lhr.audits['speed-index']?.numericValue;
 
         // Convert to seconds with 2 decimals
@@ -173,10 +207,11 @@ async function main() {
         const speedIndexSec = speedIndexMs ? (speedIndexMs / 1000).toFixed(2) : "";
 
         // Category scores
-        const performance   = lhr.categories.performance?.score;
-        const accessibility = lhr.categories.accessibility?.score;
-        const bestPractices = lhr.categories['best-practices']?.score;
-        const seo           = lhr.categories.seo?.score;
+        const performance   = lhr.categories.performance?.score ? lhr.categories.performance.score * 100 : "";
+        const accessibility = lhr.categories.accessibility?.score ? lhr.categories.accessibility.score * 100 : "";
+        const bestPractices = lhr.categories['best-practices']?.score ? lhr.categories['best-practices'].score * 100 : "";
+        const seo           = lhr.categories.seo?.score ? lhr.categories.seo.score * 100 : "";
+
 
         // The row in the desired order:
         // 1) Date

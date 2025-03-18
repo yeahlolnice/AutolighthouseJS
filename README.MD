@@ -1,3 +1,7 @@
+### starting point is runLighthouse.ps1 
+    powershell -ExecutionPolicy Bypass -File .\runLighthouse.ps1
+
+
 ## 1. Prerequisites
 1. Node.js installed on your system
 2. npm (or Yarn) for package management
