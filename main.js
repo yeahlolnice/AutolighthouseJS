@@ -62,11 +62,11 @@ const desktopConfig = {
     },
     "throttlingMethod": "simulate",
     "screenEmulation": {
-      "mobile": true,
-      "width": 412,
-      "height": 823,
-      "deviceScaleFactor": 1.75,
-      "disabled": true
+      "mobile": false,
+      "width": 1350,
+      "height": 940,
+      "deviceScaleFactor": 1,
+      "disabled": false
     },
     "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     "auditMode": false,
@@ -117,18 +117,13 @@ async function runLighthouse(url, lhConfig) {
   // Launch headless Chrome
   const chrome = await ChromeLauncher.launch({
     chromeFlags: [
+      '--headless=new',
       '--disable-gpu',
       '--no-sandbox',
-      '--remote-debugging-port=9222', // Fixed port
-      '--disable-dev-shm-usage', // Helps prevent crashes in some environments
-      '--enable-logging', // Enable logging for debugging
-      '--v=1' // Verbose logging
+      '--disable-dev-shm-usage',
     ],
-    port: 9222, 
+    port: 9222,
   });
-
-  // Wait for Chrome to fully launch
-  await new Promise(resolve => setTimeout(resolve, 3000));
 
   const options = { ...lhConfig, port: chrome.port };
 
@@ -137,6 +132,7 @@ async function runLighthouse(url, lhConfig) {
     return runnerResult.lhr;
   } catch (err) {
     console.error(`Lighthouse failed on ${url}:`, err);
+    return null; // Return null on failure, we'll handle it in the caller
   } finally {
     await chrome.kill();
   }
@@ -197,20 +193,20 @@ async function main() {
         const fcpMs = lhr.audits['first-contentful-paint']?.numericValue;
         const lcpMs = lhr.audits['largest-contentful-paint']?.numericValue;
         const tbtMs = lhr.audits['total-blocking-time']?.numericValue;
-        const cls   = lhr.audits['cumulative-layout-shift']?.numericValue.toFixed(2);
+        const cls = lhr.audits['cumulative-layout-shift']?.numericValue.toFixed(2);
         const speedIndexMs = lhr.audits['speed-index']?.numericValue;
 
         // Convert to seconds with 2 decimals
-        const fcpSec =  fcpMs ?  (fcpMs / 1000).toFixed(2) : "";
-        const lcpSec =  lcpMs ?  (lcpMs / 1000).toFixed(2) : "";
-        const tbtSec =  tbtMs ?  (tbtMs / 1000).toFixed(2) : "";
+        const fcpSec = fcpMs ? (fcpMs / 1000).toFixed(2) : "";
+        const lcpSec = lcpMs ? (lcpMs / 1000).toFixed(2) : "";
+        const tbtSec = tbtMs ? (tbtMs / 1000).toFixed(2) : "";
         const speedIndexSec = speedIndexMs ? (speedIndexMs / 1000).toFixed(2) : "";
 
         // Category scores
-        const performance   = lhr.categories.performance?.score ? lhr.categories.performance.score * 100 : "";
+        const performance = lhr.categories.performance?.score ? lhr.categories.performance.score * 100 : "";
         const accessibility = lhr.categories.accessibility?.score ? lhr.categories.accessibility.score * 100 : "";
         const bestPractices = lhr.categories['best-practices']?.score ? lhr.categories['best-practices'].score * 100 : "";
-        const seo           = lhr.categories.seo?.score ? lhr.categories.seo.score * 100 : "";
+        const seo = lhr.categories.seo?.score ? lhr.categories.seo.score * 100 : "";
 
 
         // The row in the desired order:
