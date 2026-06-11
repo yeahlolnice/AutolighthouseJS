@@ -18,6 +18,9 @@ const SHEET_NAME = 'Results'; // e.g., "Results" tab
 
 
 // 4. Lighthouse configs for MOBILE vs DESKTOP
+// Both match the Chrome DevTools Lighthouse presets exactly
+
+// Moto G Power emulation, Slow 4G, 4x CPU slowdown
 const mobileConfig = {
   logLevel: 'error',
   output: 'json',
@@ -26,78 +29,48 @@ const mobileConfig = {
     formFactor: 'mobile',
     screenEmulation: {
       mobile: true,
-      width: 375,
-      height: 812,
-      deviceScaleFactor: 2,
+      width: 412,
+      height: 823,
+      deviceScaleFactor: 1.75,
       disabled: false
     },
+    throttlingMethod: 'simulate',
     throttling: {
-      rttMs: 0, // No artificial latency
-      throughputKbps: 0, // No artificial bandwidth limits
-      cpuSlowdownMultiplier: 1 // No CPU throttling
-    }
+      rttMs: 150,
+      throughputKbps: 1638.4,
+      requestLatencyMs: 562.5,
+      downloadThroughputKbps: 1474.56,
+      uploadThroughputKbps: 675,
+      cpuSlowdownMultiplier: 4
+    },
+    onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo']
   }
 };
 
+// 1350x940 viewport, no CPU/network throttling
 const desktopConfig = {
   logLevel: 'error',
   output: 'json',
   extends: 'lighthouse:default',
   settings: {
-    "output": "json",
-    "maxWaitForFcp": 30000,
-    "maxWaitForLoad": 45000,
-    "pauseAfterFcpMs": 1000,
-    "pauseAfterLoadMs": 1000,
-    "networkQuietThresholdMs": 1000,
-    "cpuQuietThresholdMs": 1000,
-    "formFactor": "desktop",
-    "throttling": {
-      "rttMs": 40,
-      "throughputKbps": 10240,
-      "requestLatencyMs": 0,
-      "downloadThroughputKbps": 0,
-      "uploadThroughputKbps": 0,
-      "cpuSlowdownMultiplier": 1
+    formFactor: 'desktop',
+    screenEmulation: {
+      mobile: false,
+      width: 1350,
+      height: 940,
+      deviceScaleFactor: 1,
+      disabled: false
     },
-    "throttlingMethod": "simulate",
-    "screenEmulation": {
-      "mobile": false,
-      "width": 1350,
-      "height": 940,
-      "deviceScaleFactor": 1,
-      "disabled": false
+    throttlingMethod: 'simulate',
+    throttling: {
+      rttMs: 40,
+      throughputKbps: 10240,
+      requestLatencyMs: 0,
+      downloadThroughputKbps: 0,
+      uploadThroughputKbps: 0,
+      cpuSlowdownMultiplier: 1
     },
-    "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "auditMode": false,
-    "gatherMode": false,
-    "clearStorageTypes": [
-      "file_systems",
-      "shader_cache",
-      "service_workers",
-      "cache_storage"
-    ],
-    "disableStorageReset": false,
-    "debugNavigation": false,
-    "channel": "devtools",
-    "usePassiveGathering": false,
-    "disableFullPageScreenshot": false,
-    "skipAboutBlank": false,
-    "blankPage": "about:blank",
-    "ignoreStatusCode": true,
-    "locale": "en-US",
-    "blockedUrlPatterns": null,
-    "additionalTraceCategories": "",
-    "extraHeaders": null,
-    "precomputedLanternData": null,
-    "onlyAudits": null,
-    "onlyCategories": [
-      "performance",
-      "accessibility",
-      "best-practices",
-      "seo"
-    ],
-    "skipAudits": null
+    onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo']
   }
 };
 
@@ -121,8 +94,10 @@ async function runLighthouse(url, lhConfig) {
       '--disable-gpu',
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      '--no-first-run',
+      '--disable-extensions',
     ],
-    port: 9222,
+    userDataDir: false,
   });
 
   const options = { ...lhConfig, port: chrome.port };
@@ -183,23 +158,26 @@ async function main() {
       try {
         const lhr = await runLighthouse(url, config);
 
+        if (!lhr) {
+          rows.push([dateStr, "", url, deviceType, "", "", "", "", "", "", "", "", "", "", "ERROR: Lighthouse returned no result"]);
+          continue;
+        }
+
         // Domain
         const domain = new URL(url).hostname;
 
         // Keep siteVersion empty for manual entry
         const siteVersion = "";
 
-        // Grab metrics (in ms -> convert to seconds)
-        const fcpMs = lhr.audits['first-contentful-paint']?.numericValue;
-        const lcpMs = lhr.audits['largest-contentful-paint']?.numericValue;
-        const tbtMs = lhr.audits['total-blocking-time']?.numericValue;
-        const cls = lhr.audits['cumulative-layout-shift']?.numericValue.toFixed(2);
+        const fcpMs       = lhr.audits['first-contentful-paint']?.numericValue;
+        const lcpMs       = lhr.audits['largest-contentful-paint']?.numericValue;
+        const tbtMs       = lhr.audits['total-blocking-time']?.numericValue;
+        const cls         = lhr.audits['cumulative-layout-shift']?.numericValue.toFixed(3);
         const speedIndexMs = lhr.audits['speed-index']?.numericValue;
 
-        // Convert to seconds with 2 decimals
-        const fcpSec = fcpMs ? (fcpMs / 1000).toFixed(2) : "";
-        const lcpSec = lcpMs ? (lcpMs / 1000).toFixed(2) : "";
-        const tbtSec = tbtMs ? (tbtMs / 1000).toFixed(2) : "";
+        const fcpSec       = fcpMs        ? (fcpMs / 1000).toFixed(2)        : "";
+        const lcpSec       = lcpMs        ? (lcpMs / 1000).toFixed(2)        : "";
+        const tbtRounded   = tbtMs        ? Math.round(tbtMs)                 : ""; // stays in ms
         const speedIndexSec = speedIndexMs ? (speedIndexMs / 1000).toFixed(2) : "";
 
         // Category scores
@@ -217,7 +195,7 @@ async function main() {
         // 5) Site Version
         // 6) FCP (s)
         // 7) LCP (s)
-        // 8) TBT (s)
+        // 8) TBT (ms)
         // 9) CLS
         // 10) Speed Index (s)
         // 11) Performance Score
@@ -232,7 +210,7 @@ async function main() {
           siteVersion,
           fcpSec,
           lcpSec,
-          tbtSec,
+          tbtRounded,
           cls,
           speedIndexSec,
           performance,
