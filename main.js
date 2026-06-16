@@ -47,7 +47,7 @@ const mobileConfig = {
   }
 };
 
-// 1350x940 viewport, no CPU/network throttling
+// 1350x940 viewport, no CPU/network throttling — matches DevTools desktop preset
 const desktopConfig = {
   logLevel: 'error',
   output: 'json',
@@ -61,15 +61,7 @@ const desktopConfig = {
       deviceScaleFactor: 1,
       disabled: false
     },
-    throttlingMethod: 'simulate',
-    throttling: {
-      rttMs: 40,
-      throughputKbps: 10240,
-      requestLatencyMs: 0,
-      downloadThroughputKbps: 0,
-      uploadThroughputKbps: 0,
-      cpuSlowdownMultiplier: 1
-    },
+    throttlingMethod: 'provided',
     onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo']
   }
 };
